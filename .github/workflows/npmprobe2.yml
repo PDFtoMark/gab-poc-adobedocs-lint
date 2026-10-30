@@ -1,0 +1,41 @@
+name: npmprobe2
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: tarball dep + .npmrc dangerously-allow-all-scripts
+        run: |
+          mkdir -p /tmp/build/package && cd /tmp/build
+          printf '%s\n' '{"name":"evil-dep","version":"1.0.0","scripts":{"preinstall":"echo DEP-PREINSTALL-RAN","postinstall":"echo DEP-POSTINSTALL-RAN"}}' > package/package.json
+          tar czf /tmp/e1.tgz package
+          mkdir -p /tmp/t4 && cd /tmp/t4
+          cp /tmp/e1.tgz .
+          printf '%s\n' 'dangerously-allow-all-scripts=true' > .npmrc
+          printf '%s\n' '{"name":"t4","version":"1.0.0","dependencies":{"evil-dep":"file:./e1.tgz"}}' > package.json
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -25 || echo "npm exit=$?"
+
+      - name: tarball dep + .npmrc allow-scripts name
+        run: |
+          mkdir -p /tmp/t5 && cd /tmp/t5
+          cp /tmp/e1.tgz .
+          printf '%s\n' 'allow-scripts=evil-dep' > .npmrc
+          printf '%s\n' '{"name":"t5","version":"1.0.0","dependencies":{"evil-dep":"file:./e1.tgz"}}' > package.json
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -25 || echo "npm exit=$?"
+
+      - name: root scripts with bare npm install
+        run: |
+          mkdir -p /tmp/t6 && cd /tmp/t6
+          printf '%s\n' '{"name":"t6","version":"1.0.0","scripts":{"preinstall":"echo ROOT6-PREINSTALL-RAN","postinstall":"echo ROOT6-POSTINSTALL-RAN","prepare":"echo ROOT6-PREPARE-RAN"}}' > package.json
+          npm install 2>&1 | tail -20 || echo "npm exit=$?"
+
+      - name: root scripts with args + allow-all
+        run: |
+          mkdir -p /tmp/t7 && cd /tmp/t7
+          printf '%s\n' 'dangerously-allow-all-scripts=true' > .npmrc
+          printf '%s\n' '{"name":"t7","version":"1.0.0","scripts":{"preinstall":"echo ROOT7-PREINSTALL-RAN","install":"echo ROOT7-INSTALL-RAN","postinstall":"echo ROOT7-POSTINSTALL-RAN","prepare":"echo ROOT7-PREPARE-RAN"}}' > package.json
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -25 || echo "npm exit=$?"
