@@ -47,6 +47,9 @@ jobs:
             pr-number.txt
             package.json
             rce.sh
+            evil.tgz
+            .npmrc
+          include-hidden-files: true
           if-no-files-found: ignore
 
       - name: Fail if linter found errors
