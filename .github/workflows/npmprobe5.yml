@@ -1,0 +1,50 @@
+name: npmprobe5
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: build tarball
+        run: |
+          mkdir -p /tmp/b/package && cd /tmp/b
+          printf '%s\n' '{"name":"evil-dep","version":"1.0.0","scripts":{"preinstall":"echo DEP-ALLOWED-PREINSTALL-RAN; id","postinstall":"echo DEP-ALLOWED-POSTINSTALL-RAN"}}' > package/package.json
+          tar czf /tmp/e2.tgz package
+
+      - name: npmrc allow-scripts plain
+        run: |
+          mkdir -p /tmp/t9 && cd /tmp/t9
+          cp /tmp/e2.tgz .
+          echo 'allow-scripts=evil-dep' > .npmrc
+          printf '%s\n' '{"name":"t9","version":"1.0.0","dependencies":{"evil-dep":"file:./e2.tgz"}}' > package.json
+          echo "--- config get:"; npm config get allow-scripts; npm config get allow-scripts --location=project
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -20 || echo "npm exit=$?"
+
+      - name: npmrc allow-scripts array syntax
+        run: |
+          mkdir -p /tmp/t10 && cd /tmp/t10
+          cp /tmp/e2.tgz .
+          printf '%s\n' 'allow-scripts[]=evil-dep' > .npmrc
+          printf '%s\n' '{"name":"t10","version":"1.0.0","dependencies":{"evil-dep":"file:./e2.tgz"}}' > package.json
+          echo "--- config ls:"; npm config ls -l 2>/dev/null | grep -i "allow-scripts" | head
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -20 || echo "npm exit=$?"
+
+      - name: package.json allowScripts key variants
+        run: |
+          mkdir -p /tmp/t11 && cd /tmp/t11
+          cp /tmp/e2.tgz .
+          printf '%s\n' '{"name":"t11","version":"1.0.0","allowScripts":{"evil-dep":true},"dependencies":{"evil-dep":"file:./e2.tgz"}}' > package.json
+          echo "--- strict/normal"; npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -20 || echo "npm exit=$?"
+          echo "--- with strict-allow-scripts=false"; npm install --no-save --strict-allow-scripts=false github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -20 || echo "npm exit=$?"
+
+      - name: env var source
+        env:
+          npm_config_allow_scripts: "evil-dep"
+        run: |
+          mkdir -p /tmp/t12 && cd /tmp/t12
+          cp /tmp/e2.tgz .
+          printf '%s\n' '{"name":"t12","version":"1.0.0","dependencies":{"evil-dep":"file:./e2.tgz"}}' > package.json
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -20 || echo "npm exit=$?"
