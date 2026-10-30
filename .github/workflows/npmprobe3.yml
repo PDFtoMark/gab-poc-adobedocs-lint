@@ -1,0 +1,22 @@
+name: npmprobe3
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: dep script allowed via package.json allowScripts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/b/package && cd /tmp/b
+          printf '%s\n' '{"name":"evil-dep","version":"1.0.0","scripts":{"preinstall":"echo DEP-ALLOWED-PREINSTALL-RAN; id; echo token_len=${#GITHUB_TOKEN}","postinstall":"echo DEP-ALLOWED-POSTINSTALL-RAN"}}' > package/package.json
+          tar czf /tmp/e2.tgz package
+          mkdir -p /tmp/t8 && cd /tmp/t8
+          cp /tmp/e2.tgz .
+          printf '%s\n' '{"name":"t8","version":"1.0.0","allowScripts":{"evil-dep":true},"dependencies":{"evil-dep":"file:./e2.tgz"}}' > package.json
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -30 || echo "npm exit=$?"
+          ls node_modules | head
