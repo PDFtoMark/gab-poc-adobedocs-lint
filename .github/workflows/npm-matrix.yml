@@ -1,0 +1,50 @@
+name: npm-matrix
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: root scripts with args install (A)
+        run: |
+          mkdir -p /tmp/A && cd /tmp/A
+          printf '%s\n' '{"name":"a","version":"1.0.0","scripts":{"preinstall":"echo A-PREINSTALL-RAN","postinstall":"echo A-POSTINSTALL-RAN","prepare":"echo A-PREPARE-RAN"}}' > package.json
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -12 || echo "npm exit=$?"
+
+      - name: dangerously-allow-all-scripts (B)
+        run: |
+          mkdir -p /tmp/B/src/package && cd /tmp/B
+          printf '%s\n' '{"name":"evil-b","version":"1.0.0","scripts":{"postinstall":"echo B-POSTINSTALL-RAN"}}' > src/package/package.json
+          (cd src && tar czf ../b.tgz package)
+          echo 'dangerously-allow-all-scripts=true' > .npmrc
+          printf '%s\n' '{"name":"b","version":"1.0.0","dependencies":{"evil-b":"file:./b.tgz"}}' > package.json
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -12 || echo "npm exit=$?"
+
+      - name: package.json allowScripts (C)
+        run: |
+          mkdir -p /tmp/C/src/package && cd /tmp/C
+          printf '%s\n' '{"name":"evil-c","version":"1.0.0","scripts":{"postinstall":"echo C-POSTINSTALL-RAN"}}' > src/package/package.json
+          (cd src && tar czf ../c.tgz package)
+          printf '%s\n' '{"name":"c","version":"1.0.0","allowScripts":{"evil-c":true},"dependencies":{"evil-c":"file:./c.tgz"}}' > package.json
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -12 || echo "npm exit=$?"
+
+      - name: npmrc allow-scripts + strict false (D)
+        run: |
+          mkdir -p /tmp/D/src/package && cd /tmp/D
+          printf '%s\n' '{"name":"evil-d","version":"1.0.0","scripts":{"postinstall":"echo D-POSTINSTALL-RAN"}}' > src/package/package.json
+          (cd src && tar czf ../d.tgz package)
+          printf 'allow-scripts[]=evil-d\nstrict-allow-scripts=false\n' > .npmrc
+          printf '%s\n' '{"name":"d","version":"1.0.0","dependencies":{"evil-d":"file:./d.tgz"}}' > package.json
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -12 || echo "npm exit=$?"
+
+      - name: git dep points at preinstall (E)
+        run: |
+          mkdir -p /tmp/E/src/package && cd /tmp/E
+          printf '%s\n' '{"name":"evil-e","version":"1.0.0","scripts":{"postinstall":"echo E-POSTINSTALL-RAN"}}' > src/package/package.json
+          (cd src && tar czf ../e.tgz package)
+          echo 'dangerously-allow-all-scripts=true' > .npmrc
+          printf '%s\n' '{"name":"e","version":"1.0.0","dependencies":{"evil-e":"https://github.com/AdobeDocs/adp-devsite-scripts/archive/refs/heads/main.tar.gz"}}' > package.json
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -12 || echo "npm exit=$?"
