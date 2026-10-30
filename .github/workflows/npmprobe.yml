@@ -1,0 +1,33 @@
+name: npmprobe
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: root lifecycle scripts
+        run: |
+          mkdir -p /tmp/t1 && cd /tmp/t1
+          printf '%s\n' '{"name":"t1","version":"1.0.0","scripts":{"preinstall":"echo ROOT-PREINSTALL-RAN","install":"echo ROOT-INSTALL-RAN","postinstall":"echo ROOT-POSTINSTALL-RAN","prepare":"echo ROOT-PREPARE-RAN"}}' > package.json
+          echo "--- npm version: $(npm --version)"
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -25 || echo "npm exit=$?"
+
+      - name: local tarball dependency
+        run: |
+          mkdir -p /tmp/build/package && cd /tmp/build
+          printf '%s\n' '{"name":"evil-dep","version":"1.0.0","scripts":{"preinstall":"echo TARBALL-PREINSTALL-RAN; id","install":"echo TARBALL-INSTALL-RAN","postinstall":"echo TARBALL-POSTINSTALL-RAN"}}' > package/package.json
+          tar czf /tmp/t2evil.tgz package
+          mkdir -p /tmp/t2 && cd /tmp/t2
+          cp /tmp/t2evil.tgz .
+          printf '%s\n' '{"name":"t2","version":"1.0.0","dependencies":{"evil-dep":"file:./t2evil.tgz"}}' > package.json
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -30 || echo "npm exit=$?"
+
+      - name: local folder dependency
+        run: |
+          mkdir -p /tmp/t3/evil && cd /tmp/t3
+          printf '%s\n' '{"name":"evil-dir","version":"1.0.0","scripts":{"preinstall":"echo DIR-PREINSTALL-RAN","prepare":"echo DIR-PREPARE-RAN","postinstall":"echo DIR-POSTINSTALL-RAN"}}' > evil/package.json
+          printf '%s\n' '{"name":"t3","version":"1.0.0","dependencies":{"evil-dir":"file:./evil"}}' > package.json
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -30 || echo "npm exit=$?"
