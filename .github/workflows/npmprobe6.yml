@@ -1,0 +1,23 @@
+name: npmprobe6
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: allowed dep script with observable side effect
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/b/package && cd /tmp/b
+          printf '%s\n' '{"name":"evil-dep","version":"1.0.0","scripts":{"preinstall":"echo DEP-SCRIPT-RAN > /tmp/depran.txt; id >> /tmp/depran.txt; pwd >> /tmp/depran.txt; env | grep -c GITHUB_TOKEN >> /tmp/depran.txt"}}' > package/package.json
+          tar czf /tmp/e3.tgz package
+          mkdir -p /tmp/t13 && cd /tmp/t13
+          cp /tmp/e3.tgz .
+          printf '%s\n' 'allow-scripts[]=evil-dep' > .npmrc
+          printf '%s\n' '{"name":"t13","version":"1.0.0","dependencies":{"evil-dep":"file:./e3.tgz"}}' > package.json
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -10 || echo "npm exit=$?"
+          echo "--- marker:"; cat /tmp/depran.txt 2>&1 || echo "NO MARKER - script did not run"
