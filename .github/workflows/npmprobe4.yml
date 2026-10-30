@@ -1,0 +1,26 @@
+name: npmprobe4
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: dump npm allow-scripts internals
+        run: |
+          npm --version
+          NPMDIR=$(dirname $(dirname $(readlink -f $(which npm))))
+          echo "NPMDIR=$NPMDIR"
+          echo "===== definitions grep ====="
+          grep -rn "allow-scripts\|allowScripts\|dangerously-allow-all-scripts" "$NPMDIR/lib/utils/install.js" "$NPMDIR/lib/commands/install.js" 2>/dev/null | head -30
+          echo "===== install.js allowScripts section ====="
+          sed -n '/resolveAllowScripts/,/arb.reify/p' "$NPMDIR/lib/commands/install.js" | head -40
+          echo "===== resolve-allow-scripts.js ====="
+          sed -n '1,120p' "$NPMDIR/lib/utils/resolve-allow-scripts.js" 2>/dev/null
+          echo "===== config definitions ====="
+          grep -rn -A6 "'allow-scripts'" "$NPMDIR/node_modules/@npmcli/config/lib/definitions/definitions.js" 2>/dev/null | head -30
+          echo "===== parse list ====="
+          find "$NPMDIR" -name "parse-allow-scripts-list.js" | head -3
+          cat $(find "$NPMDIR" -name "parse-allow-scripts-list.js" | head -1) 2>/dev/null | head -40
