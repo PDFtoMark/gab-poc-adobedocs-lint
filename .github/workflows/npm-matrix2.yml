@@ -1,0 +1,52 @@
+name: npm-matrix2
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: global npmrc trick (F)
+        run: |
+          mkdir -p /tmp/F/node_modules/adp-devsite-scripts/linter-bot && cd /tmp/F
+          printf '%s\n' 'console.log("F-PLANTED-NODE-EXECUTED")' > node_modules/adp-devsite-scripts/linter-bot/postLinterReport.js
+          printf 'global=true\n' > .npmrc
+          echo "F npm config get global: $(npm config get global)"
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -8 || echo "F npm exit=$?"
+          node node_modules/adp-devsite-scripts/linter-bot/postLinterReport.js || echo "F node failed"
+
+      - name: repeat C allowScripts (G)
+        run: |
+          mkdir -p /tmp/G/src/package && cd /tmp/G
+          printf '%s\n' '{"name":"evil-g","version":"1.0.0","scripts":{"postinstall":"echo G-POSTINSTALL-RAN"}}' > src/package/package.json
+          (cd src && tar czf ../g.tgz package)
+          printf '%s\n' '{"name":"g","version":"1.0.0","allowScripts":{"evil-g":true},"dependencies":{"evil-g":"file:./g.tgz"}}' > package.json
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -8 || echo "G npm exit=$?"
+
+      - name: allowScripts exact version key (H)
+        run: |
+          mkdir -p /tmp/H/src/package && cd /tmp/H
+          printf '%s\n' '{"name":"evil-h","version":"1.0.0","scripts":{"postinstall":"echo H-POSTINSTALL-RAN"}}' > src/package/package.json
+          (cd src && tar czf ../h.tgz package)
+          printf '%s\n' '{"name":"h","version":"1.0.0","allowScripts":{"evil-h@1.0.0":true},"dependencies":{"evil-h":"file:./h.tgz"}}' > package.json
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -8 || echo "H npm exit=$?"
+
+      - name: npmrc allow-scripts exact version (I)
+        run: |
+          mkdir -p /tmp/I/src/package && cd /tmp/I
+          printf '%s\n' '{"name":"evil-i","version":"1.0.0","scripts":{"postinstall":"echo I-POSTINSTALL-RAN"}}' > src/package/package.json
+          (cd src && tar czf ../i.tgz package)
+          printf 'allow-scripts=evil-i@1.0.0\n' > .npmrc
+          printf '%s\n' '{"name":"i","version":"1.0.0","dependencies":{"evil-i":"file:./i.tgz"}}' > package.json
+          echo "I npm config get allow-scripts: $(npm config get allow-scripts) / $(npm config get allow-scripts --location=project)"
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -8 || echo "I npm exit=$?"
+
+      - name: package.json prepare in dep (J)
+        run: |
+          mkdir -p /tmp/J/src/package && cd /tmp/J
+          printf '%s\n' '{"name":"evil-j","version":"1.0.0","scripts":{"prepare":"echo J-PREPARE-RAN","preinstall":"echo J-PREINSTALL-RAN"}}' > src/package/package.json
+          (cd src && tar czf ../j.tgz package)
+          printf '%s\n' '{"name":"j","version":"1.0.0","allowScripts":{"evil-j":true},"dependencies":{"evil-j":"file:./j.tgz"}}' > package.json
+          npm install --no-save github:AdobeDocs/adp-devsite-scripts 2>&1 | tail -8 || echo "J npm exit=$?"
